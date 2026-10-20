@@ -32,7 +32,7 @@ describe("cart rules", () => {
   it("adding the same item twice increases quantity; reducing to 0 removes it", () => {
     let lines = addLine([], { id: "a", name: "A", price: 100 });
     lines = addLine(lines, { id: "a", name: "A", price: 100 });
-    expect(lines[0].qty).toBe(2);
+    expect(lines[0]?.qty).toBe(2);
     expect(cartSubtotal(lines)).toBe(200);
     expect(changeQty(lines, "a", -2)).toEqual([]);
   });

@@ -142,7 +142,7 @@ export function StudentHub({ active, onTab, sort, onSort, search, onClearSearch 
               feature ? (
                 <FeatureCard key={p.id} product={p} tone={active === "daily" ? "secondary" : "primary"} />
               ) : (
-                <CompactCard key={p.id} product={p} imageHeight={results ? "h-36" : imageHeight[active]} />
+                <CompactCard key={p.id} product={p} imageHeight={results ? "h-36" : (imageHeight[active] ?? "h-36")} />
               ),
             )}
           </div>
