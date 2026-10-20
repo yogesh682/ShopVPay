@@ -9,6 +9,17 @@ import {
   monthlyEmi,
   qualifiesForFreeShipping,
 } from "@/lib/cart";
+import {
+  firstError,
+  firstName,
+  MIN_PASSWORD_LENGTH,
+  profileSchema,
+  resetRequestSchema,
+  signInSchema,
+  signUpSchema,
+} from "@/lib/account";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
 import { Icon, useShop } from "./ShopProvider";
 
 const field =
@@ -266,6 +277,7 @@ const payments = [
 
 export function CheckoutModal() {
   const { modal, setModal, cart, discount, placeOrder } = useShop();
+  const { profile } = useAuth();
   const [payment, setPayment] = useState("vpay");
   const total = cartTotal(cartSubtotal(cart), discount);
 
@@ -293,14 +305,29 @@ export function CheckoutModal() {
           <label className="mb-1 block text-xs font-semibold text-on-surface" htmlFor="co-name">
             Full Name
           </label>
-          <input id="co-name" required placeholder="e.g. Vishnu Priya" className={field} />
+          <input
+            id="co-name"
+            key={`name-${profile?.full_name ?? ""}`}
+            defaultValue={profile?.full_name ?? ""}
+            required
+            placeholder="e.g. Vishnu Priya"
+            className={field}
+          />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-semibold text-on-surface" htmlFor="co-phone">
               Mobile Number (For Delivery OTP)
             </label>
-            <input id="co-phone" type="tel" required placeholder="+91 98765 43210" className={field} />
+            <input
+              id="co-phone"
+              key={`phone-${profile?.phone ?? ""}`}
+              defaultValue={profile?.phone ?? ""}
+              type="tel"
+              required
+              placeholder="+91 98765 43210"
+              className={field}
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-on-surface" htmlFor="co-pin">
@@ -365,52 +392,310 @@ export function CheckoutModal() {
   );
 }
 
+type AuthMode = "signin" | "signup" | "forgot";
+
+function friendlyAuthError(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("invalid login")) return "Wrong email or password.";
+  if (m.includes("email not confirmed")) return "Please confirm your email first — check your inbox.";
+  if (m.includes("already registered")) return "An account with this email already exists. Try signing in.";
+  if (m.includes("rate limit")) return "Too many attempts. Please wait a few minutes and try again.";
+  return message;
+}
+
 export function AccountModal() {
-  const { modal, setModal, showToast } = useShop();
-  const signIn = () => {
-    setModal(null);
-    showToast("Signed In Successfully", "Welcome back Vishnu! Campus privileges unlocked.");
-  };
+  const { modal, setModal } = useShop();
+  const { session } = useAuth();
   return (
     <ModalShell open={modal === "account"} onClose={() => setModal(null)} label="Student account" className="max-w-sm">
-      <div className="mb-6 space-y-2 text-center">
+      {session ? <ProfilePanel /> : <AuthForms />}
+    </ModalShell>
+  );
+}
+
+function AuthForms() {
+  const { setModal, showToast } = useShop();
+  const [mode, setMode] = useState<AuthMode>("signin");
+  const [form, setForm] = useState({ fullName: "", phone: "", email: "", password: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const switchMode = (m: AuthMode) => {
+    setMode(m);
+    setError(null);
+    setNotice(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setNotice(null);
+
+    if (mode === "signin") {
+      const parsed = signInSchema.safeParse(form);
+      if (!parsed.success) return setError(firstError(parsed));
+      setBusy(true);
+      const { data, error: err } = await supabase.auth.signInWithPassword(parsed.data);
+      setBusy(false);
+      if (err) return setError(friendlyAuthError(err.message));
+      const name = firstName(data.user?.user_metadata?.full_name as string | undefined);
+      setModal(null);
+      showToast("Signed In Successfully", `Welcome back${name ? ` ${name}` : ""}! Campus privileges unlocked.`);
+      return;
+    }
+
+    if (mode === "signup") {
+      const parsed = signUpSchema.safeParse(form);
+      if (!parsed.success) return setError(firstError(parsed));
+      setBusy(true);
+      const { data, error: err } = await supabase.auth.signUp({
+        email: parsed.data.email,
+        password: parsed.data.password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: { full_name: parsed.data.fullName, phone: parsed.data.phone },
+        },
+      });
+      setBusy(false);
+      if (err) return setError(friendlyAuthError(err.message));
+      if (data.session) {
+        setModal(null);
+        showToast("Account Created 🎓", `Welcome to ShopVPay, ${firstName(parsed.data.fullName)}!`);
+        return;
+      }
+      setForm((f) => ({ ...f, password: "" }));
+      setMode("signin");
+      setNotice(`Almost there! We sent a confirmation link to ${parsed.data.email}. Click it, then sign in here.`);
+      return;
+    }
+
+    const parsed = resetRequestSchema.safeParse(form);
+    if (!parsed.success) return setError(firstError(parsed));
+    setBusy(true);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setBusy(false);
+    if (err) return setError(friendlyAuthError(err.message));
+    setNotice(`If an account exists for ${parsed.data.email}, a reset link is on its way.`);
+  };
+
+  const titles: Record<AuthMode, [string, string]> = {
+    signin: ["Student Account Access", "Sign in with the email you registered with."],
+    signup: ["Create Your Student Account", "Get campus deals, faster checkout and 0% EMI perks."],
+    forgot: ["Reset Your Password", "We'll email you a link to choose a new password."],
+  };
+  const submitLabel: Record<AuthMode, string> = {
+    signin: "Sign In",
+    signup: "Create Account",
+    forgot: "Send Reset Link",
+  };
+
+  return (
+    <>
+      <div className="mb-5 space-y-2 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-fixed text-primary">
-          <Icon name="lock" className="text-2xl" />
+          <Icon name={mode === "signup" ? "school" : "lock"} className="text-2xl" />
         </div>
-        <h3 className="text-title-lg text-on-surface">Student Account Access</h3>
-        <p className="text-xs text-on-surface-variant">
-          Sign in with your student phone number or college email (.edu / .ac.in)
-        </p>
+        <h3 className="text-title-lg text-on-surface">{titles[mode][0]}</h3>
+        <p className="text-xs text-on-surface-variant">{titles[mode][1]}</p>
       </div>
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          signIn();
-        }}
-      >
-        <input aria-label="College email or mobile" placeholder="College Email or Mobile" className={field} />
-        <input aria-label="Password" type="password" placeholder="Password" className={field} />
+
+      {mode !== "forgot" && (
+        <div className="mb-4 grid grid-cols-2 rounded-lg bg-surface-container p-1 text-xs font-semibold" role="tablist">
+          {(["signin", "signup"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={mode === m}
+              onClick={() => switchMode(m)}
+              className={`rounded-md py-1.5 transition-colors ${
+                mode === m ? "bg-surface-lowest text-primary shadow-sm" : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              {m === "signin" ? "Sign In" : "Sign Up"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <form className="space-y-3" onSubmit={submit} noValidate>
+        {mode === "signup" && (
+          <>
+            <input
+              aria-label="Full name"
+              placeholder="Full Name"
+              autoComplete="name"
+              value={form.fullName}
+              onChange={set("fullName")}
+              className={field}
+            />
+            <input
+              aria-label="Mobile number"
+              type="tel"
+              placeholder="Mobile Number (+91)"
+              autoComplete="tel"
+              value={form.phone}
+              onChange={set("phone")}
+              className={field}
+            />
+          </>
+        )}
+        <input
+          aria-label="Email"
+          type="email"
+          placeholder="Email (college email works great)"
+          autoComplete="email"
+          value={form.email}
+          onChange={set("email")}
+          className={field}
+        />
+        {mode !== "forgot" && (
+          <input
+            aria-label="Password"
+            type="password"
+            placeholder={mode === "signup" ? `Password (min ${MIN_PASSWORD_LENGTH} characters)` : "Password"}
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            value={form.password}
+            onChange={set("password")}
+            className={field}
+          />
+        )}
+        {mode === "signin" && (
+          <div className="text-right">
+            <button
+              type="button"
+              onClick={() => switchMode("forgot")}
+              className="text-[11px] font-semibold text-secondary hover:underline"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="text-xs font-medium text-error">
+            {error}
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="rounded-lg bg-primary-fixed/40 p-2.5 text-xs font-medium text-on-primary-fixed">
+            {notice}
+          </p>
+        )}
         <button
           type="submit"
-          className="w-full rounded-lg bg-primary-container py-2.5 text-xs font-semibold text-on-primary transition-all hover:bg-primary"
+          disabled={busy}
+          className="w-full rounded-lg bg-primary-container py-2.5 text-xs font-semibold text-on-primary transition-all hover:bg-primary disabled:opacity-60"
         >
-          Continue with ShopVPay
+          {busy ? "Please wait…" : submitLabel[mode]}
         </button>
-        <div className="relative flex items-center py-2">
-          <div className="flex-grow border-t border-outline-variant/30" />
-          <span className="mx-2 flex-shrink font-mono text-[10px] uppercase text-outline">Instant Perks</span>
-          <div className="flex-grow border-t border-outline-variant/30" />
+        {mode === "forgot" && (
+          <button
+            type="button"
+            onClick={() => switchMode("signin")}
+            className="w-full text-center text-xs font-semibold text-primary hover:underline"
+          >
+            Back to Sign In
+          </button>
+        )}
+      </form>
+    </>
+  );
+}
+
+function ProfilePanel() {
+  const { setModal, showToast } = useShop();
+  const { session, profile, refreshProfile, signOut } = useAuth();
+  const [fullName, setFullName] = useState(profile?.full_name ?? "");
+  const [phone, setPhone] = useState(profile?.phone ?? "");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setFullName(profile?.full_name ?? "");
+    setPhone(profile?.phone ?? "");
+  }, [profile]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const parsed = profileSchema.safeParse({ fullName, phone });
+    if (!parsed.success || !session) return setError(firstError(parsed));
+    setBusy(true);
+    const { error: err } = await supabase
+      .from("profiles")
+      .upsert({ id: session.user.id, full_name: parsed.data.fullName, phone: parsed.data.phone });
+    setBusy(false);
+    if (err) return setError("Couldn't save your details. Please try again.");
+    await refreshProfile();
+    showToast("Profile Saved", "Your details will be filled in at checkout.");
+  };
+
+  const logout = async () => {
+    await signOut();
+    setModal(null);
+    showToast("Signed Out", "See you soon on campus!");
+  };
+
+  return (
+    <>
+      <div className="mb-5 space-y-2 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary-fixed text-primary">
+          <Icon name="person" className="text-2xl" />
         </div>
+        <h3 className="text-title-lg text-on-surface">
+          Hi{profile?.full_name ? `, ${firstName(profile.full_name)}` : ""}!
+        </h3>
+        <p className="truncate text-xs text-on-surface-variant">{session?.user.email}</p>
+      </div>
+      <form className="space-y-3" onSubmit={save} noValidate>
+        <label className="block text-xs font-semibold text-on-surface" htmlFor="pf-name">
+          Full Name
+        </label>
+        <input
+          id="pf-name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          autoComplete="name"
+          className={field}
+        />
+        <label className="block text-xs font-semibold text-on-surface" htmlFor="pf-phone">
+          Mobile Number
+        </label>
+        <input
+          id="pf-phone"
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          autoComplete="tel"
+          className={field}
+        />
+        {error && (
+          <p role="alert" className="text-xs font-medium text-error">
+            {error}
+          </p>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full rounded-lg bg-primary-container py-2.5 text-xs font-semibold text-on-primary transition-all hover:bg-primary disabled:opacity-60"
+        >
+          {busy ? "Saving…" : "Save Details"}
+        </button>
         <button
           type="button"
-          onClick={signIn}
+          onClick={logout}
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-outline-variant/50 bg-surface-low py-2 text-xs font-semibold text-on-surface transition-all hover:bg-surface-container"
         >
-          <Icon name="verified" className="text-sm text-secondary" /> Verify via College ID Card
+          <Icon name="logout" className="text-sm" /> Sign Out
         </button>
       </form>
-    </ModalShell>
+    </>
   );
 }
 

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { LOGO_URL, type Department } from "@/data/products";
 import { cartCount } from "@/lib/cart";
+import { firstName } from "@/lib/account";
+import { useAuth } from "@/hooks/use-auth";
 import { Icon, useShop } from "./ShopProvider";
 
 export type SearchCategory = Department | "all";
@@ -21,6 +23,7 @@ interface HeaderProps {
 
 export function Header({ onSearch, onDepartment }: HeaderProps) {
   const { cart, wishlist, wishlistBase, openCart, setModal } = useShop();
+  const { session, profile } = useAuth();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<SearchCategory>("all");
 
@@ -127,11 +130,16 @@ export function Header({ onSearch, onDepartment }: HeaderProps) {
             <button
               type="button"
               onClick={() => setModal("account")}
-              title="Account"
-              className="flex items-center gap-1 rounded-full p-2 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary"
+              title={session ? "My account" : "Login or sign up"}
+              aria-label={session ? "My account" : "Login or sign up"}
+              className={`flex items-center gap-1 rounded-full p-2 transition-colors hover:bg-surface-container hover:text-primary ${
+                session ? "text-primary" : "text-on-surface-variant"
+              }`}
             >
-              <Icon name="account_circle" className="text-2xl" />
-              <span className="hidden text-xs font-semibold xl:inline">Login</span>
+              <Icon name="account_circle" className="text-2xl" fill={!!session} />
+              <span className="hidden text-xs font-semibold xl:inline">
+                {session ? `Hi, ${firstName(profile?.full_name) || "Student"}` : "Login"}
+              </span>
             </button>
           </div>
         </div>
