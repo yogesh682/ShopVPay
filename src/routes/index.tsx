@@ -1,24 +1,85 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import type { Department } from "@/data/products";
+import { Header, type SearchCategory } from "@/components/shop/Header";
+import { FlashDeals, Hero, ValueBar } from "@/components/shop/HeroSections";
+import { StudentHub, type SortKey } from "@/components/shop/StudentHub";
+import { EmiBanner, Footer, Testimonials } from "@/components/shop/LowerSections";
+import { AccountModal, CartDrawer, CheckoutModal, Toast } from "@/components/shop/Overlays";
+import { ShopProvider } from "@/components/shop/ShopProvider";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "ShopVPay — Shop Smart, Pay Easy | Student Tech Hub" },
+      {
+        name: "description",
+        content:
+          "Student gadgets, coding kits, laptops and audio gear with 0% EMI on your college ID. Flash deals and campus discounts.",
+      },
+      { property: "og:title", content: "ShopVPay — Shop Smart, Pay Easy" },
+      {
+        property: "og:description",
+        content: "College tech, engineering kits and audio gear with interest-free VPay EMI for students.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+function scrollToHub() {
+  requestAnimationFrame(() => document.getElementById("student-hub")?.scrollIntoView({ behavior: "smooth" }));
+}
+
 function Index() {
+  const [dept, setDept] = useState<Department>("mobile");
+  const [sort, setSort] = useState<SortKey>("popular");
+  const [search, setSearch] = useState<{ query: string; category: SearchCategory } | null>(null);
+
+  const goToDept = (d: Department) => {
+    setSearch(null);
+    setDept(d);
+    scrollToHub();
+  };
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
+    <ShopProvider>
+      <Header
+        onDepartment={goToDept}
+        onSearch={(query, category) => {
+          if (!query.trim() && category !== "all") {
+            goToDept(category);
+            return;
+          }
+          setSearch(query.trim() || category !== "all" ? { query: query.trim(), category } : null);
+          scrollToHub();
+        }}
       />
-    </div>
+      <main className="space-y-12 pb-16">
+        <Hero />
+        <ValueBar />
+        <FlashDeals />
+        <StudentHub
+          active={dept}
+          onTab={(d) => {
+            setSearch(null);
+            setDept(d);
+          }}
+          sort={sort}
+          onSort={setSort}
+          search={search}
+          onClearSearch={() => setSearch(null)}
+        />
+        <EmiBanner />
+        <Testimonials />
+      </main>
+      <Footer />
+      <CartDrawer />
+      <CheckoutModal />
+      <AccountModal />
+      <Toast />
+    </ShopProvider>
   );
 }

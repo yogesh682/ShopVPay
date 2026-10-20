@@ -8,3 +8,10 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+## Project rules
+
+- Storefront is a single page (`src/routes/index.tsx`) built from `src/components/shop/*`; cart/wishlist/modal/toast state lives in `ShopProvider` context — keeps all overlays in sync without a backend.
+- Pricing rules (promo, totals, EMI, free-shipping threshold) live as pure functions in `src/lib/cart.ts` with tests in `src/test/cart.test.ts` — UI must call these, never re-implement math.
+- Product catalog is static data in `src/data/products.ts` with hotlinked images — swap for a database later without touching card components.
+- Icons use the Material Symbols Outlined web font via the `Icon` helper — matches the source design.
