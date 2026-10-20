@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState, type
 import { addLine, changeQty, promoDiscount, type CartLine } from "@/lib/cart";
 import { findProduct, type Product } from "@/data/products";
 
-type Modal = "account" | "checkout" | null;
+type Modal = "account" | "checkout" | "orders" | null;
 
 interface ToastState {
   title: string;
@@ -104,12 +104,13 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     [showToast],
   );
 
+  // Called after the order rows are saved; clears the cart and shows the orders list.
   const placeOrder = useCallback(() => {
-    setModal(null);
+    setModal("orders");
     setCart([]);
     setDiscount(0);
     setPromoApplied(false);
-    showToast("Order Confirmed! 🎉", "VPay confirmation SMS & WhatsApp tracking sent.");
+    showToast("Order Confirmed! 🎉", "Your order has been saved to My Orders.");
   }, [showToast]);
 
   const value = useMemo<ShopContextValue>(

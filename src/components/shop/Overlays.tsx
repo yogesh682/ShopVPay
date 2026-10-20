@@ -277,8 +277,10 @@ const payments = [
 
 export function CheckoutModal() {
   const { modal, setModal, cart, discount, placeOrder } = useShop();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const [payment, setPayment] = useState("vpay");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const total = cartTotal(cartSubtotal(cart), discount);
 
   return (
@@ -296,8 +298,28 @@ export function CheckoutModal() {
       <p className="mb-4 text-xs text-on-surface-variant">Enter shipping address and select payment mode.</p>
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
+          setError(null);
+          if (!session) {
+            setError("Please sign in to place your order.");
+            setModal("account");
+            return;
+          }
+          if (cart.length === 0) return setError("Your bag is empty.");
+          const fd = new FormData(e.currentTarget);
+          const rows = buildOrderRows(cart, {
+            orderGroup: crypto.randomUUID(),
+            customerId: session.user.id,
+            customerName: String(fd.get("name") ?? "").trim(),
+            phone: String(fd.get("phone") ?? "").trim(),
+            address: `${String(fd.get("address") ?? "").trim()} — ${String(fd.get("pin") ?? "").trim()}`,
+            paymentMethod: payment,
+          });
+          setBusy(true);
+          const { error: err } = await supabase.from("orders").insert(rows);
+          setBusy(false);
+          if (err) return setError("Couldn't place your order. Please try again.");
           placeOrder();
         }}
       >
