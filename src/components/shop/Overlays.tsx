@@ -19,6 +19,7 @@ import {
   signUpSchema,
 } from "@/lib/account";
 import { supabase } from "@/integrations/supabase/client";
+import { buildOrderRows } from "@/lib/orders";
 import { useAuth } from "@/hooks/use-auth";
 import { Icon, useShop } from "./ShopProvider";
 
