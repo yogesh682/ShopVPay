@@ -442,7 +442,7 @@ function AuthForms() {
       const { data, error: err } = await supabase.auth.signInWithPassword(parsed.data);
       setBusy(false);
       if (err) return setError(friendlyAuthError(err.message));
-      const name = firstName(data.user?.user_metadata?.full_name as string | undefined);
+      const name = firstName(data.user?.user_metadata?.["full_name"] as string | undefined);
       setModal(null);
       showToast("Signed In Successfully", `Welcome back${name ? ` ${name}` : ""}! Campus privileges unlocked.`);
       return;
