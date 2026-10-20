@@ -36,8 +36,9 @@ function ResetPassword() {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") setHasRecovery(true);
     });
+    // The recovery link signs the user in; the hash may already be consumed, so a session also counts.
     supabase.auth.getSession().then(({ data }) => {
-      setHasRecovery((prev) => prev || (isRecoveryLink && !!data.session) || isRecoveryLink);
+      setHasRecovery((prev) => prev === true || isRecoveryLink || !!data.session);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
